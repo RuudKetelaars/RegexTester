@@ -16,17 +16,17 @@ namespace RegexTester
 {
   public partial class frmMain : Form
   {
-    private DataTable dtMatchesRes;
-    private Thread worker;
-    private FastColoredTextBox CurrentControl;
-    private int CurrentLocation;
-    private List<Style> styleList;
-    private event RegexProcessStartEventHandler RegexProcessStart;
+    private DataTable _dtMatchesRes;
+    private Thread _worker;
+    private FastColoredTextBox _currentControl;
+    private int _currentLocation;
+    private List<Style> _styleList;
     private delegate void RegexProcessStartEventHandler();
-    private event RegexProcessEndEventHandler RegexProcessEnd;
+    private event RegexProcessStartEventHandler RegexProcessStart;
     private delegate void RegexProcessEndEventHandler();
-    private event RegexProcessTextEventHandler RegexProcessText;
+    private event RegexProcessEndEventHandler RegexProcessEnd;
     private delegate void RegexProcessTextEventHandler(DateTime dt, string status);
+    private event RegexProcessTextEventHandler RegexProcessText;
 
     public frmMain()
     {
@@ -49,9 +49,11 @@ namespace RegexTester
 
       mnuHelpInfo.Enabled = File.Exists(Path.Combine(Application.StartupPath, "QuickReference.pdf"));
 
-      ToolTip tt = new ToolTip();
-      tt.IsBalloon = false;
-      tt.ShowAlways = true;
+      ToolTip tt = new ToolTip()
+      {
+        IsBalloon = false,
+        ShowAlways = true
+      };
 
       tt.SetToolTip(cbIgnoreCase, "Use case-insensitive matching.");
       tt.SetToolTip(cbMultiline, "Use multiline mode, where ^ and $ match the beginning and end of each line.");
@@ -126,8 +128,8 @@ namespace RegexTester
         }
       }
 
-      styleList = fctbInput.Styles.ToList();
-      styleList.RemoveAll(stl => stl == null);
+      _styleList = fctbInput.Styles.ToList();
+      _styleList.RemoveAll(stl => stl == null);
 
       fctbInput.SelectionColor = General.SelectColor;
       fctbResult.SelectionColor = General.SelectColor;
@@ -161,7 +163,7 @@ namespace RegexTester
     {
       if (!state)
       {
-        CurrentLocation = CurrentControl.SelectionStart;
+        _currentLocation = _currentControl.SelectionStart;
       }
 
       this.MaximizeBox = state;
@@ -199,17 +201,16 @@ namespace RegexTester
 
         mnuHelpInfo.Enabled = File.Exists(Path.Combine(Application.StartupPath, "QuickReference.pdf"));
 
-        if ((CurrentControl != null))
+        if (_currentControl != null)
         {
-          CurrentControl.SelectionStart = CurrentLocation;
-          CurrentControl.Focus();
+          _currentControl.SelectionStart = _currentLocation;
+          _currentControl.Focus();
         }
       }
     }
 
     private void btnMatches_Click(object sender, EventArgs e)
     {
-
       RegexVariables variables = new RegexVariables();
       bool validRegex = false;
 
@@ -227,11 +228,15 @@ namespace RegexTester
       {
         SetComponentState(false);
 
-        worker = new Thread(() => ApplyRegEx(variables));
+        _worker = new Thread(ApplyRegEx);
 
-        worker.IsBackground = true;
+        _worker.IsBackground = true;
 
-        worker.Start(variables);
+        RegexProcessStart += OnRegexProcessStart;
+        RegexProcessEnd += OnRegexProcessEnd;
+        RegexProcessText += OnRegexProcessText;
+
+        _worker.Start(variables);
       }
     }
 
@@ -254,25 +259,29 @@ namespace RegexTester
       {
         SetComponentState(false);
 
-        worker = new Thread(() => ReplaceRegEx(variables));
+        _worker = new Thread(ReplaceRegEx);
 
-        worker.IsBackground = true;
+        _worker.IsBackground = true;
 
-        worker.Start(variables);
+        RegexProcessStart += OnRegexProcessStart;
+        RegexProcessEnd += OnRegexProcessEnd;
+        RegexProcessText += OnRegexProcessText;
+
+        _worker.Start(variables);
       }
     }
 
     private void btnStop_Click(object sender, EventArgs e)
     {
-      if (worker.IsAlive)
+      if (_worker.IsAlive)
       {
-        worker.Abort();
+        _worker.Abort();
         sbStatus.Text = "Check Stopped";
         Invoke(new Action<bool>(SetComponentState), true);
       }
     }
 
-    private void ApplyRegEx(RegexVariables variables)
+    private void ApplyRegEx(object objVariables)
     {
       bool err = false;
       DateTime startTime;
@@ -284,10 +293,11 @@ namespace RegexTester
       int colorCounter = 0;
       int colorSelect = 0;
       int matchesFound = 0;
-      int matchesProcessed = 0;
 
       int matchIndex = 0;
       int matchLength = 0;
+
+      RegexVariables variables = (RegexVariables)objVariables;
 
       if (RegexProcessStart != null)
       {
@@ -334,7 +344,7 @@ namespace RegexTester
             RegexProcessText(DateTime.Now, "Search Ended");
           }
 
-          dtMatchesRes = CreateTable();
+          _dtMatchesRes = CreateTable();
 
           if (RegexProcessText != null)
           {
@@ -350,14 +360,14 @@ namespace RegexTester
               matchIndex = j == 0 ? matches[i].Index : matches[i].Groups[j].Index;
               matchLength = j == 0 ? matches[i].Length : matches[i].Groups[j].Length;
 
-              r = dtMatchesRes.NewRow();
+              r = _dtMatchesRes.NewRow();
               r["Match"] = i.ToString();
               r["Nr"] = j == 0 ? i.ToString() : string.Empty;
               r["Index"] = matchIndex.ToString();
               r["Length"] = matchLength.ToString();
               r["Group"] = groups[j];
               r["MatchedString"] = matches[i].Groups[j].Value;
-              dtMatchesRes.Rows.Add(r);
+              _dtMatchesRes.Rows.Add(r);
 
               if (j == 0)
               {
@@ -372,7 +382,7 @@ namespace RegexTester
 
               colorCounter += 1;
 
-              if (colorCounter == styleList.Count)
+              if (colorCounter == _styleList.Count)
               {
                 colorCounter = 0;
               }
@@ -384,7 +394,7 @@ namespace RegexTester
             RegexProcessText(DateTime.Now, "Highlight Ended");
           }
 
-          GridAddSource(dtMatchesRes);
+          GridAddSource(_dtMatchesRes);
 
           if (RegexProcessText != null)
           {
@@ -399,7 +409,7 @@ namespace RegexTester
           }
         }
       }
-      catch (System.Exception ex)
+      catch (Exception ex)
       {
         err = true;
       }
@@ -436,12 +446,14 @@ namespace RegexTester
       }
     }
 
-    private void ReplaceRegEx(RegexVariables variables)
+    private void ReplaceRegEx(object objVariables)
     {
       bool err = false;
       DateTime startTime;
       TimeSpan executionTimeSpan;
       Regex re;
+
+      RegexVariables variables = (RegexVariables)objVariables;
 
       if (RegexProcessStart != null)
       {
@@ -537,7 +549,7 @@ namespace RegexTester
         Style clrStyle = default(Style);
         Range r = default(Range);
 
-        clrStyle = styleList[colornumber];
+        clrStyle = _styleList[colornumber];
 
         fctbInput.BeginUpdate();
 
@@ -568,7 +580,7 @@ namespace RegexTester
       }
       else
       {
-        dtMatchesRes = null;
+        _dtMatchesRes = null;
         grd.DataSource = null;
       }
     }
@@ -662,12 +674,17 @@ namespace RegexTester
       return dt;
     }
 
-    private void frmMain_regexProcessEnd()
+    private void OnRegexProcessStart()
+    {
+
+    }
+
+    private void OnRegexProcessEnd()
     {
       Invoke(new Action<bool>(SetComponentState), true);
     }
 
-    private void frmMain_regexProcessText(DateTime dt, string status)
+    private void OnRegexProcessText(DateTime dt, string status)
     {
       sbStatus.Text = status;
     }
@@ -796,7 +813,7 @@ namespace RegexTester
               Delimiter = string.Empty;
               break;
             case 3:
-              if ((dtMatchesRes != null))
+              if ((_dtMatchesRes != null))
               {
                 XmlWriterSettings settings = new XmlWriterSettings();
                 settings.Indent = true;
@@ -804,7 +821,7 @@ namespace RegexTester
                 using (XmlWriter writer = XmlWriter.Create(saveFile.FileName, settings))
                 {
                   DataSet ds = new DataSet("Results");
-                  ds.Tables.Add(dtMatchesRes);
+                  ds.Tables.Add(_dtMatchesRes);
 
                   writer.WriteStartDocument();
                   writer.WriteStartElement("RegexResult");
@@ -836,10 +853,10 @@ namespace RegexTester
                 resultFileStream.WriteLine("Replace: " + txtReplace.Text);
                 resultFileStream.WriteLine(string.Empty);
 
-                maxLengthCol = Enumerable.Range(0, dtMatchesRes.Columns.Count).Select(col => dtMatchesRes.AsEnumerable().Select(row => row[col]).OfType<string>().Max(val => val.Length)).ToList();
+                maxLengthCol = Enumerable.Range(0, _dtMatchesRes.Columns.Count).Select(col => _dtMatchesRes.AsEnumerable().Select(row => row[col]).OfType<string>().Max(val => val.Length)).ToList();
               }
 
-              if (dtMatchesRes.Rows.Count > 0)
+              if (_dtMatchesRes.Rows.Count > 0)
               {
                 foreach (DataGridViewColumn col in grdResult.Columns)
                 {
@@ -973,7 +990,7 @@ namespace RegexTester
 
     private void fctb_GotFocus(object sender, EventArgs e)
     {
-      CurrentControl = sender as FastColoredTextBox;
+      _currentControl = sender as FastColoredTextBox;
     }
 
     private void txtPattern_TextChanged(object sender, TextChangedEventArgs e)
@@ -1004,7 +1021,7 @@ namespace RegexTester
     {
       if (splitInputResult.CanFocus)
       {
-        CurrentControl.Focus();
+        _currentControl.Focus();
       }
     }
 
