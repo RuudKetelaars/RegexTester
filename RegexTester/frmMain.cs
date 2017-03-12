@@ -20,6 +20,7 @@ namespace RegexTester
     private Thread _worker;
     private FastColoredTextBox _currentControl;
     private int _currentLocation;
+    private bool _regexProgress;
     private List<Style> _styleList;
     private delegate void RegexProcessStartEventHandler();
     private event RegexProcessStartEventHandler RegexProcessStart;
@@ -36,6 +37,8 @@ namespace RegexTester
     private void frmMain_Load(object sender, EventArgs e)
     {
       int counter = 0;
+
+      _regexProgress = false;
 
       txtPattern.GotFocus += fctb_GotFocus;
       txtReplace.GotFocus += fctb_GotFocus;
@@ -163,6 +166,7 @@ namespace RegexTester
     {
       if (!state)
       {
+        _regexProgress = !state;
         _currentLocation = _currentControl.SelectionStart;
       }
 
@@ -200,6 +204,8 @@ namespace RegexTester
         RegexOptionsCheckBoxes();
 
         mnuHelpInfo.Enabled = File.Exists(Path.Combine(Application.StartupPath, "QuickReference.pdf"));
+
+        _regexProgress = !state;
 
         if (_currentControl != null)
         {
@@ -990,7 +996,10 @@ namespace RegexTester
 
     private void fctb_GotFocus(object sender, EventArgs e)
     {
-      _currentControl = sender as FastColoredTextBox;
+      if (!_regexProgress)
+      {
+        _currentControl = sender as FastColoredTextBox;
+      }
     }
 
     private void txtPattern_TextChanged(object sender, TextChangedEventArgs e)
